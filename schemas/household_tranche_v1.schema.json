@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sinergy.system/schemas/household.tranche/v1",
+  "title": "SINERGY HouseholdTranche v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "tranche_id", "owner_ref", "denomination", "principal", "opened_at", "maturity_at", "liquidity_class", "status"],
+  "properties": {
+    "schema": {"const": "household.tranche/v1"},
+    "tranche_id": {"type": "string", "minLength": 1},
+    "owner_ref": {"type": "string", "minLength": 1},
+    "denomination": {"type": "string", "minLength": 3, "maxLength": 16},
+    "principal": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$"},
+    "opened_at": {"type": "string", "format": "date-time"},
+    "maturity_at": {"type": "string", "format": "date-time"},
+    "liquidity_class": {"enum": ["CALLABLE", "TERM", "LOCKED", "RESTRICTED"]},
+    "risk_class": {"type": ["string", "null"]},
+    "source": {"type": ["string", "null"]},
+    "status": {"enum": ["OPEN", "MATURED", "WITHDRAWN", "ROLLED", "RESTRICTED"]},
+    "metadata": {"type": "object"}
+  }
+}
