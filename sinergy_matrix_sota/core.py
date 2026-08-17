@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Iterable
 
 
@@ -16,9 +16,13 @@ class MaturityInvariantError(ValueError):
 
 
 def _d(value: Decimal | int | str) -> Decimal:
-    if isinstance(value, Decimal):
-        return value
-    return Decimal(str(value))
+    try:
+        number = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise MaturityInvariantError("value must be a finite decimal") from exc
+    if not number.is_finite():
+        raise MaturityInvariantError("value must be finite")
+    return number
 
 
 def ensure_credit_duration(loan_maturity_weeks: int, funding_remaining_weeks: int) -> None:
@@ -158,11 +162,44 @@ class MaturityBook:
         horizon_weeks: int = 100,
         denomination: str | None = None,
     ) -> dict[int, Decimal]:
+        """Return contractual maturity unlocks for all open tranches.
+
+        This audit schedule includes CALLABLE balances at their contractual
+        maturity. It must not be used directly as future LCR outflow because
+        callable principal is already an immediate outflow exposure.
+        """
+
         if horizon_weeks < 1 or horizon_weeks > 100:
             raise MaturityInvariantError("horizon_weeks must be 1..100")
         currency = self._resolve_denomination(as_of_week, denomination)
         result = {week: ZERO for week in range(1, horizon_weeks + 1)}
         for tranche in self._open_in_currency(as_of_week, currency):
+            remaining = tranche.remaining_weeks(as_of_week)
+            if 1 <= remaining <= horizon_weeks:
+                result[remaining] += tranche.principal
+        return result
+
+    def scheduled_noncallable_unlocks(
+        self,
+        as_of_week: int,
+        horizon_weeks: int = 100,
+        denomination: str | None = None,
+    ) -> dict[int, Decimal]:
+        """Return future maturity outflows excluding immediately callable principal.
+
+        CALLABLE balances are represented only by ``immediately_callable_principal``
+        in the federation snapshot. Excluding them from this schedule prevents the
+        same principal from appearing once as immediate demand funding and again at
+        its contractual maturity in LCR horizon outflows.
+        """
+
+        if horizon_weeks < 1 or horizon_weeks > 100:
+            raise MaturityInvariantError("horizon_weeks must be 1..100")
+        currency = self._resolve_denomination(as_of_week, denomination)
+        result = {week: ZERO for week in range(1, horizon_weeks + 1)}
+        for tranche in self._open_in_currency(as_of_week, currency):
+            if tranche.liquidity_class == "CALLABLE":
+                continue
             remaining = tranche.remaining_weeks(as_of_week)
             if 1 <= remaining <= horizon_weeks:
                 result[remaining] += tranche.principal
